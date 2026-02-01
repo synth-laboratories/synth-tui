@@ -1,0 +1,16 @@
+# Node/Bun
+app/node_modules/
+app/dist/
+
+# Python
+**/__pycache__/
+*.pyc
+
+# Logs
+*.log
+
+# Release artifacts
+release/
+
+# OS
+.DS_Store
