@@ -1,0 +1,264 @@
+SYNTH-TUI MIGRATION PLAN
+========================
+Goal: Extract tui/ from synth-ai into standalone synth-tui repo.
+
+SOURCE INVENTORY (synth-ai/tui/)
+--------------------------------
+tui/
+├── __init__.py              # Python re-export (BUG: imports run_tui but launcher defines run_prompt_learning_tui)
+├── launcher.py              # Python launcher (spawns bun, uses synth_ai.core.* imports)
+├── deploy.py                # Deployment helper
+├── eval_job.py              # Eval job helper
+├── README.md                # Current README
+├── app/                     # TypeScript TUI app (~130 source files)
+│   ├── package.json         # name: synth-ai-tui
+│   ├── package.dist.json    # PyPI-friendly version (no workspace refs)
+│   ├── bunfig.toml
+│   ├── tsconfig.json
+│   ├── bun.lock
+│   ├── src/                 # Main TS source
+│   │   ├── index.ts         # Entry point
+│   │   ├── api/             # Backend API clients (jobs, events, traces, tunnels, etc.)
+│   │   ├── components/      # UI components
+│   │   ├── formatters/      # Data formatters
+│   │   ├── handlers/        # Keyboard handlers
+│   │   ├── lifecycle/       # App lifecycle (shutdown)
+│   │   ├── modals/          # Modal dialogs
+│   │   ├── persistence/     # Settings persistence
+│   │   ├── selectors/       # State selectors
+│   │   ├── solid/           # Solid.js UI layer (TSX components)
+│   │   ├── state/           # App state management
+│   │   ├── templates/       # LocalAPI templates
+│   │   ├── types/           # TypeScript type definitions
+│   │   ├── ui/              # UI rendering
+│   │   └── utils/           # Utility functions
+│   ├── scripts/
+│   │   ├── build.ts
+│   │   └── build-bins.ts    # Creates standalone binaries
+│   ├── tests/
+│   └── node_modules/        # (gitignored, ~1900 files when installed)
+├── opencode_config/
+│   ├── opencode.jsonc       # OpenCode config
+│   └── AGENTS.md            # Agent instructions
+├── release/
+│   ├── SHA256SUMS
+│   ├── synth-ai-tui-darwin-arm64.tar.gz
+│   └── synth-ai-tui-darwin-x64.tar.gz
+├── reference/               # Screenshots
+├── scripts/
+│   └── release.sh           # Build release tarballs
+└── tests/
+    ├── __init__.py
+    ├── conftest.py
+    ├── test_opencode_integration.py
+    └── test_streaming.py
+
+EXTERNAL REFERENCES
+-------------------
+1. homebrew-tap/Formula/synth-ai-tui.rb
+   - Points to: https://github.com/synth-laboratories/synth-ai/archive/tui-v0.1.0.tar.gz
+   - Installs: tui/app, tui/opencode_config
+   - Creates: bin/synth-ai-tui (shell script invoking bun)
+
+2. synth-ai/pyproject.toml
+   - No direct tui references (tui is a sub-package)
+
+3. docs/
+   - No direct synth-ai-tui references found
+
+4. CI/Workflows
+   - No dedicated tui workflow found in synth-ai/.github/
+
+PYTHON DEPENDENCIES (from launcher.py)
+--------------------------------------
+The Python launcher imports from synth-ai:
+  from synth_ai.core.env import get_api_key
+  from synth_ai.core.urls import BACKEND_URL_BASE, FRONTEND_URL_BASE
+  from synth_ai.sdk.opencode_skills import materialize_tui_opencode_config_dir
+
+Options:
+  A) Keep synth-ai as a runtime dependency for the Python launcher
+  B) Inline/duplicate the minimal URL/key logic into synth-tui
+  C) Create a synth-ai-core package with shared utilities
+
+Recommendation: Option A initially (simplest), then evaluate Option C if synth-ai becomes too heavy.
+
+JS DEPENDENCIES (from package.json)
+-----------------------------------
+Key dependencies:
+  - @opencode-ai/sdk: ^1.1.11  (OpenCode integration)
+  - @opentui/core: ^0.1.0      (Terminal UI framework)
+  - @opentui/solid: 0.1.69     (Solid.js TUI bindings)
+  - jimp: ^1.6.0               (Image processing)
+  - solid-js: ^1.9.9           (Reactive UI)
+
+Platform-specific optional deps:
+  - @opentui/core-darwin-arm64, @opentui/core-darwin-x64, etc.
+
+No direct synth-ai imports in JS code (API calls go to backend URLs).
+
+MIGRATION STEPS
+===============
+
+PHASE 1: Repository Setup
+-------------------------
+[ ] 1.1 Initialize synth-tui with README, LICENSE
+[ ] 1.2 Add .gitignore (node_modules, dist, release/, *.log)
+[ ] 1.3 Set up GitHub repo settings (branch protection, etc.)
+
+PHASE 2: Code Migration (with history)
+--------------------------------------
+Option A - git filter-repo (preserves full history, complex):
+  cd synth-ai
+  git filter-repo --path tui/ --path-rename tui/:
+  # Push to synth-tui
+
+Option B - Simple copy (loses history, simple):
+  cp -r synth-ai/tui/* synth-tui/
+  cd synth-tui && git add . && git commit -m "Initial import from synth-ai/tui"
+
+Recommendation: Option B (simpler, history available in synth-ai if needed).
+
+[ ] 2.1 Copy tui/ contents to synth-tui/
+[ ] 2.2 Reorganize structure:
+        synth-tui/
+        ├── app/                  # TypeScript app (was tui/app)
+        ├── python/               # Python launcher (new)
+        │   ├── synth_tui/
+        │   │   ├── __init__.py
+        │   │   └── launcher.py
+        │   └── pyproject.toml    # Optional: standalone Python package
+        ├── opencode_config/
+        ├── release/
+        ├── scripts/
+        ├── tests/
+        ├── package.json          # Root package.json for bun workspace
+        ├── README.md
+        └── migration_plan.txt    # This file (delete after migration)
+
+PHASE 3: Dependency Resolution
+------------------------------
+[ ] 3.1 Update Python launcher imports:
+        Option A: Keep synth-ai dependency
+          - Add synth-ai to requirements/pyproject.toml
+        Option B: Inline minimal code
+          - Copy get_api_key logic (env var lookup)
+          - Copy URL constants
+          - Remove materialize_tui_opencode_config_dir or copy it
+
+[ ] 3.2 Update package.json:
+        - Change name to "synth-tui" (was synth-ai-tui)
+        - Update homepage/repository URLs to synth-tui
+        - Keep dependencies as-is
+
+[ ] 3.3 Fix Python __init__.py bug:
+        - Change: from .launcher import run_tui
+        - To:     from .launcher import run_prompt_learning_tui as run_tui
+        - Or rename function in launcher.py to run_tui
+
+PHASE 4: Build & Release Updates
+--------------------------------
+[ ] 4.1 Update scripts/release.sh paths
+[ ] 4.2 Create GitHub Actions workflow for:
+        - TypeScript build (bun install && bun run build)
+        - TypeScript tests (bun test)
+        - Python tests (pytest)
+        - Release automation (create tarballs, update SHA256SUMS)
+
+[ ] 4.3 Update homebrew-tap/Formula/synth-ai-tui.rb:
+        - Change url to: https://github.com/synth-laboratories/synth-tui/archive/v{version}.tar.gz
+        - Update homepage to: https://github.com/synth-laboratories/synth-tui
+        - Update install paths (tui/app → app, tui/opencode_config → opencode_config)
+
+PHASE 5: synth-ai Cleanup
+-------------------------
+[ ] 5.1 Remove synth-ai/tui/ directory
+[ ] 5.2 Add deprecation notice if tui was exposed as a public API:
+        synth_ai/tui/__init__.py:
+        """
+        DEPRECATED: The TUI has moved to synth-tui.
+        Install with: brew install synth-laboratories/tap/synth-ai-tui
+        Or: pip install synth-tui
+        """
+        raise ImportError("synth_ai.tui has moved to synth-tui package")
+
+[ ] 5.3 Update any internal synth-ai references to tui (none found currently)
+[ ] 5.4 Update synth-ai CHANGELOG/release notes
+
+PHASE 6: Documentation
+----------------------
+[ ] 6.1 Update synth-tui/README.md with:
+        - Installation instructions (brew, bun, from source)
+        - Usage guide
+        - Development setup
+        - Contributing guidelines
+
+[ ] 6.2 Update docs/ if needed (no current references found)
+
+PHASE 7: Validation
+-------------------
+[ ] 7.1 Build TypeScript app: cd app && bun install && bun run build
+[ ] 7.2 Run TypeScript tests: cd app && bun test
+[ ] 7.3 Run Python tests: pytest tests/
+[ ] 7.4 Test Homebrew install flow (local tap)
+[ ] 7.5 Test Python launcher: python -c "from synth_tui import run_tui"
+[ ] 7.6 End-to-end test: synth-ai-tui (launch and verify UI)
+
+FILE-BY-FILE MIGRATION CHECKLIST
+================================
+Source: synth-ai/tui/
+Target: synth-tui/
+
+[x] README.md → README.md (update content)
+[ ] __init__.py → python/synth_tui/__init__.py (fix bug)
+[ ] launcher.py → python/synth_tui/launcher.py (update imports)
+[ ] deploy.py → python/synth_tui/deploy.py
+[ ] eval_job.py → python/synth_tui/eval_job.py
+[ ] app/ → app/ (no changes needed)
+[ ] opencode_config/ → opencode_config/
+[ ] release/ → release/
+[ ] scripts/ → scripts/ (update paths)
+[ ] tests/ → tests/ (update imports)
+[ ] reference/ → reference/ (optional, screenshots)
+
+NEW FILES TO CREATE
+===================
+[ ] .gitignore
+[ ] LICENSE (MIT, match synth-ai)
+[ ] python/pyproject.toml (if publishing to PyPI)
+[ ] .github/workflows/ci.yml
+[ ] CHANGELOG.md
+
+ROLLBACK PLAN
+=============
+If issues arise:
+1. Keep synth-ai/tui/ until synth-tui is stable
+2. Homebrew formula can point to either repo
+3. Python launcher can fallback to synth-ai imports
+
+TIMELINE ESTIMATE
+=================
+- Phase 1-2: 1 hour (setup + copy)
+- Phase 3: 2 hours (dependency resolution)
+- Phase 4: 2 hours (build/release)
+- Phase 5: 30 min (synth-ai cleanup)
+- Phase 6: 1 hour (docs)
+- Phase 7: 1 hour (validation)
+Total: ~7-8 hours
+
+OPEN QUESTIONS
+==============
+1. Should Python launcher be a separate PyPI package (synth-tui)?
+   - Pro: Users can pip install synth-tui
+   - Con: More maintenance, version sync with JS app
+
+2. Should we preserve git history?
+   - Pro: Blame/history preserved
+   - Con: Complex migration, large initial clone
+
+3. Should synth-ai depend on synth-tui or vice versa?
+   - Option A: synth-tui depends on synth-ai (for URL/key utils)
+   - Option B: synth-tui is standalone (inline utils)
+   - Option C: Both depend on synth-ai-core (new shared package)
+
+Recommendation: Start with Option A, minimal changes. Revisit after migration.
