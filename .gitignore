@@ -1,6 +1,7 @@
 # Node/Bun
 app/node_modules/
 app/dist/
+app/.opencode/
 
 # Python
 **/__pycache__/
