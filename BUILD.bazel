@@ -1,0 +1,32 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+package(default_visibility = ["//visibility:public"])
+
+COMMON_ENV = {
+    "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
+}
+
+sh_test(
+    name = "app_unit_tests",
+    srcs = ["scripts/bazel_app_tests.sh"],
+    data = glob(
+        ["app/**"],
+        exclude = [
+            "app/dist/**",
+            "app/node_modules/**",
+        ],
+    ),
+    env = COMMON_ENV,
+    local = True,
+    tags = ["offline"],
+)
+
+test_suite(
+    name = "offline_tests",
+    tests = [":app_unit_tests"],
+)
+
+test_suite(
+    name = "all_tests",
+    tests = [":app_unit_tests"],
+)
